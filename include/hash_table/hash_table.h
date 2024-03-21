@@ -2,13 +2,14 @@
 #include<iostream>
 #include<vector>
 #include<exception>
-#include <random>
+#include<random>
 #include<cmath>
 #include<string>
 
 using namespace std; 
 
 namespace hash_table {
+
 	int random(int a, int b) {
 		std::random_device random_device;
 		std::mt19937 generator(random_device());
@@ -22,6 +23,7 @@ namespace hash_table {
 		template<typename K, typename T>
 		class Node {
 		public:
+
 			K _key;
 			T _val;
 			Node* _next;
@@ -41,11 +43,16 @@ namespace hash_table {
 				_next = nullptr;
 			}
 
-			~Node() = default;
+			~Node() {
+				_is_empty = true;
+				_key = {};
+				_val = {};
+				_next = nullptr;
+			}
 
 			void print() {
 				cout << "Key: " << _key<<" ";
-				cout << "Val: " << _val << " ";
+				cout << "Val: " << _val << "; ";
 			}
 		};
 
@@ -54,14 +61,25 @@ namespace hash_table {
 		size_t _size;
 
 		size_t h(K key) {
-			int hash = key;
-			hash = (hash ^ 61) ^ (hash >> 16);
-			hash *= 9;
-			hash ^= hash >> 4;
-			hash *= 0x27d4eb2d;
-			hash ^= hash >> 15;
-			return hash % _size;
+			// ”множение на простое число по заветам  нута
+			long long int result = (long long int)key * 2654435761;
+
+			result = result % (long long int)(pow(2,32));
+			// —двигаем вправо на (w-l) бит
+			result = result >> (32-power_of_two(_size));
+
+			return result;
 		}
+
+		size_t power_of_two(size_t n) {
+			size_t power = 0;
+			while (n > 1) {
+				n = n >> 1;
+				power++;
+			}
+			return power;
+		}
+
 	public:
 		HashTable() {
 			_count = 0;
@@ -69,35 +87,62 @@ namespace hash_table {
 			_table.resize(0);
 		}
 
-		HashTable(size_t size) {
+		HashTable(size_t pow_2) {
 			_count = 0;
-			_size = size;
-			_table.resize(size);
+			_size = (size_t)pow(2,pow_2);
+			_table.resize((size_t)pow(2, pow_2));
 		}
 
-		HashTable(const HashTable& other) {
+		HashTable(const HashTable<K, T>& other) {
 			_count = 0;
 			_size = other._size;
 			_table.resize(_size);
-			size_t n = other._table.size();
+			size_t n = other._size;
 			for (int i = 0; i < n; i++) {
 				if (!other._table[i]._is_empty) {
 					insert(other._table[i]._key, other._table[i]._val);
-					auto ptr = other._table[i]._next;
+					Node<K, T>* ptr = other._table[i]._next;
 					while (ptr) {
 						insert(ptr->_key, ptr->_val);
 						ptr = ptr->_next;
 					}
 				}
 			}
-
 		}
-		
+
+		HashTable(size_t pow_2, size_t len) {
+			_count = 0;
+			_size = (size_t)pow(2, pow_2);
+			_table.resize((size_t)pow(2, pow_2));
+			for (int i = 0; i < len; i++) {
+				insert(random(-_size, _size));
+			}
+		}
+
+		~HashTable() {
+			clear();
+		}
+
+		HashTable<K, T>& operator=(const HashTable<K,T>& other) {
+			if (this == &other)
+				return *this;
+			else {
+				return HashTable<K, T>(other);
+			}
+		}
+
+		int get_size() const{
+			return _size;
+		}
+
+		int get_count() const {
+			return _count;
+		}
+
 		void clear() {
-			size_t n = _table.size();
-			for (int i = 0; i < n; i++) {
+			for (int i = 0; i < _size; i++) {
 				if (!_table[i]._is_empty) {
-					auto ptr = _table[i]._next;
+					Node<K, T>* ptr = _table[i]._next;
 					while (ptr) {
 						auto tmp = ptr;
 						ptr = ptr->_next;
@@ -107,10 +152,7 @@ namespace hash_table {
 			}
 			_table.erase(_table.begin(), _table.end());
 		}
-		~HashTable() {
-			clear();
-		}
-
+		
 		bool insert(K key, T val) {
 			if (search(key))
 				return false;
@@ -191,12 +233,27 @@ namespace hash_table {
 				return nullptr;
 			}
 		}
+
+		bool contains(T value) {
+			for (int i = 0; i < _size; i++) {
+				if (!_table[i]._is_empty) {
+					Node<K, T>* ptr = &_table[i];
+					while (ptr) {
+						if (ptr->_val == value)
+							return true;
+						ptr = ptr->_next;
+					}
+				}
+			}
+			return false;
+		}
+
 		void print() {
-			size_t n = _table.size();
+			size_t n = _size;
 			for (int i = 0; i < n; i++) {
 				if (!_table[i]._is_empty) {
 					_table[i].print();
-					auto ptr = _table[i]._next;
+					Node<K, T>* ptr = _table[i]._next;
 					while (ptr) {
 						ptr->print();
 						ptr = ptr->_next;
@@ -206,23 +263,50 @@ namespace hash_table {
 			}
 		}
 
-		void remake() {
+		void remake(size_t pow_2) {
 			HashTable<K, T> tmp(*this);
 			clear();
-			_table.resize(2 * _size);
-			_size = 2 * _size;
+			_table.resize(pow(2,pow_2));
+			_size = pow(2, pow_2);
 			_count = 0;
-			size_t n = tmp._table.size();
+			size_t n = tmp._size;
 			for (int i = 0; i < n; i++) {
 				if (!tmp._table[i]._is_empty) {
 					insert(tmp._table[i]._key, tmp._table[i]._val);
-					auto ptr = tmp._table[i]._next;
+					Node<K, T>* ptr = tmp._table[i]._next;
 					while (ptr) {
 						insert(ptr->_key, ptr->_val);
 						ptr = ptr->_next;
 					}
 				}
 			}
+		}
+
+		size_t count(K key) {
+			size_t index = h(key);
+			if (search(key)) {
+				size_t c = 1;
+				Node<K, T>* ptr = _table[index]._next;
+				while (ptr) {
+					c++;
+					ptr = ptr->_next;
+				}
+				return c;
+			}
+			return 0;
+
+		}
+
+		void get_stat() {
+			cout << "Fill percentage: " << ((_count + 0.0) / _size) * 100 << "%" << endl;
+			size_t coll_count = 0;
+			size_t n = _size;
+			for (int i = 0; i < n; i++) {
+				if (!_table[i]._is_empty) {
+					coll_count += count(_table[i]._key) - 1;
+				}
+			}
+			cout << "Collision count: " << coll_count << endl;
 		}
 	};
 
@@ -251,6 +335,7 @@ namespace hash_table {
 		}
 		return hash;
 	}
+
 	bool hash_compare(string str, int hash) {
 		int str_hash = Pearson_hash(str);
 		if (str_hash == hash) {
